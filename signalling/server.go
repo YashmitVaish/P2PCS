@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -18,8 +17,85 @@ func NewServer() *Server {
 	}
 }
 
+func (s *Server) addPeer(p *Peer) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.peers[p.PeerId] = p
+}
+
+func (s *Server) removePeer(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.peers, id)
+}
+
+func (s *Server) handleListPeers(conn *websocket.Conn) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var peers []PeerInfo
+	for _, p := range s.peers {
+		if p.Role == "executor" {
+			peers = append(peers, PeerInfo{
+				PeerID: p.PeerId,
+				RAM:    p.RAM,
+				CPU:    p.CPU,
+			})
+		}
+	}
+
+	conn.WriteJSON(Message{
+		Type:  "peers",
+		Peers: peers,
+	})
+}
+
+func (s *Server) forwardMsg(msg Message) {
+	s.mu.Lock()
+	target, ok := s.peers[msg.To]
+	s.mu.Unlock()
+
+	if !ok {
+		return
+	}
+
+	target.Conn.WriteJSON(msg)
+}
+
 func (s *Server) handleConn(conn *websocket.Conn) {
 	defer conn.Close()
 
-	log.Println("heyyy")
+	var peer *Peer
+
+	for {
+		var msg Message
+
+		if err := conn.ReadJSON(&msg); err != nil {
+			if peer != nil {
+				s.removePeer(peer.PeerId)
+			}
+			return
+		}
+
+		switch msg.Type {
+		case "register":
+			peer = &Peer{
+				PeerId: msg.PeerID,
+				Role:   msg.Role,
+				RAM:    msg.RAM,
+				CPU:    msg.CPU,
+				Conn:   conn,
+			}
+
+			s.addPeer(peer)
+
+		case "list_peers":
+			s.handleListPeers(conn)
+
+		case "signal":
+			s.forwardMsg(msg)
+		}
+
+	}
+
 }

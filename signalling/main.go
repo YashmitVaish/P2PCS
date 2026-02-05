@@ -17,9 +17,16 @@ var upgrader = websocket.Upgrader{
 func main() {
 	server := NewServer()
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("heyy"))
-	})
+	// http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	// 	body, err := io.ReadAll(r.Body)
+	// 	if err != nil {
+	// 		http.Error(w, "not able to read", 403)
+	// 		return
+	// 	}
+
+	// 	w.WriteHeader(200)
+	// 	w.Write([]byte(body))
+	// })
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)

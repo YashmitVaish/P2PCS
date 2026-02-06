@@ -2,6 +2,7 @@ package main
 
 import (
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -58,8 +59,39 @@ func (s *Server) forwardMsg(msg Message) {
 	if !ok {
 		return
 	}
-
 	target.Conn.WriteJSON(msg)
+}
+
+func (s *Server) RegisterBeat(msg Message) {
+	s.mu.Lock()
+	peer, ok := s.peers[msg.PeerID]
+	s.mu.Unlock()
+
+	if !ok {
+		return
+	}
+
+	peer.LastBeat = time.Now()
+}
+
+func (s *Server) Cleanup() {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	go func() {
+		for range ticker.C {
+			now := time.Now()
+
+			s.mu.Lock()
+			for id, p := range s.peers {
+				if now.Sub(p.LastBeat) > 30*time.Second {
+					p.Conn.Close()
+					delete(s.peers, id)
+				}
+			}
+			s.mu.Unlock()
+		}
+	}()
 }
 
 func (s *Server) handleConn(conn *websocket.Conn) {
@@ -80,11 +112,12 @@ func (s *Server) handleConn(conn *websocket.Conn) {
 		switch msg.Type {
 		case "register":
 			peer = &Peer{
-				PeerId: msg.PeerID,
-				Role:   msg.Role,
-				RAM:    msg.RAM,
-				CPU:    msg.CPU,
-				Conn:   conn,
+				PeerId:   msg.PeerID,
+				Role:     msg.Role,
+				RAM:      msg.RAM,
+				CPU:      msg.CPU,
+				Conn:     conn,
+				LastBeat: time.Now(),
 			}
 
 			s.addPeer(peer)

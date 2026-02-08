@@ -36,6 +36,7 @@ func main() {
 		}
 		go server.handleConn(conn)
 	})
+	go server.Cleanup()
 
 	log.Println("signaling server listening on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))

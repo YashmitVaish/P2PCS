@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"sync"
 	"time"
 
@@ -64,34 +65,37 @@ func (s *Server) forwardMsg(msg Message) {
 
 func (s *Server) RegisterBeat(msg Message) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	peer, ok := s.peers[msg.PeerID]
-	s.mu.Unlock()
 
 	if !ok {
 		return
 	}
-
+	log.Println(peer)
 	peer.LastBeat = time.Now()
 }
 
 func (s *Server) Cleanup() {
+	log.Println("cleanup called")
+
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
-	go func() {
-		for range ticker.C {
-			now := time.Now()
+	for range ticker.C {
+		log.Println("cleanup ran")
+		log.Println(s.peers)
+		now := time.Now()
 
-			s.mu.Lock()
-			for id, p := range s.peers {
-				if now.Sub(p.LastBeat) > 30*time.Second {
-					p.Conn.Close()
-					delete(s.peers, id)
-				}
+		s.mu.Lock()
+		for id, p := range s.peers {
+			if now.Sub(p.LastBeat) > 15*time.Second {
+				log.Println("delete peer", id)
+				p.Conn.Close()
+				delete(s.peers, id)
 			}
-			s.mu.Unlock()
 		}
-	}()
+		s.mu.Unlock()
+	}
 }
 
 func (s *Server) handleConn(conn *websocket.Conn) {
@@ -120,6 +124,8 @@ func (s *Server) handleConn(conn *websocket.Conn) {
 				LastBeat: time.Now(),
 			}
 
+			log.Println("registered conn", msg.PeerID)
+
 			s.addPeer(peer)
 
 		case "list_peers":
@@ -127,6 +133,9 @@ func (s *Server) handleConn(conn *websocket.Conn) {
 
 		case "signal":
 			s.forwardMsg(msg)
+
+		case "ping":
+			s.RegisterBeat(msg)
 		}
 
 	}
